@@ -6,6 +6,7 @@
                  }
 
   :dependencies [[com.twitter/finagle-kestrel "5.3.9"]
+                 [com.twitter/finagle-commons-stats "5.3.9"]
                  ]
 
   :dev-dependencies [[storm "0.8.1"]

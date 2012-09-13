@@ -1,4 +1,4 @@
-(defproject trident-kestrel "0.0.1-SNAPSHOT"
+(defproject trident-kestrel "0.0.2-SNAPSHOT"
   :source-path "src/clj"
   :java-source-path "src/jvm"
   :javac-options {:debug "true" :fork "true"}

@@ -85,6 +85,7 @@ public class KestrelState<T> implements State {
             .retries(options.retries)
             .requestTimeout(Duration.fromTimeUnit(options.requestTimeout, TimeUnit.MILLISECONDS))
         ));
+    LOG.info("Created kestrel client to " + options.hostString);
   }
 
   public void beginCommit(Long txid) {
@@ -101,13 +102,14 @@ public class KestrelState<T> implements State {
    */
   public void enqueue(List<T> objectsToEnqueue) {
     List<Future<Response>> futures = Lists.newArrayList();
+    LOG.info("Items to enqueue " + objectsToEnqueue.size());
     for (T oneItem:objectsToEnqueue) {
       ChannelBuffer buffer = ChannelBuffers.wrappedBuffer(options.serializer.serialize(oneItem));
       futures.add(kestrelClient.set(options.queueName, buffer));
     }
     // now harvest the futures
     for (Future<Response> future:futures) {
-      future.get();
+      LOG.info("processed response " + future.get());
     }
   }
 }

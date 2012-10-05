@@ -88,6 +88,11 @@ public class KestrelState<T> implements State {
     LOG.info("Created kestrel client to " + options.hostString);
   }
 
+  public KestrelState(Client kestrelClient) {
+    this.kestrelClient = kestrelClient;
+    LOG.info("Created kestrel client");
+  }
+
   public void beginCommit(Long txid) {
     // no op
   }

@@ -103,7 +103,7 @@ public class KestrelState<T> implements State {
    */
   public void enqueue(List<T> objectsToEnqueue) {
     List<Future<Response>> futures = Lists.newArrayList();
-    LOG.info("Items to enqueue " + objectsToEnqueue.size());
+    LOG.debug("Items to enqueue " + objectsToEnqueue.size());
     try {
       for (T oneItem:objectsToEnqueue) {
         ChannelBuffer buffer = ChannelBuffers.wrappedBuffer(options.serializer.serialize(oneItem));
@@ -111,10 +111,10 @@ public class KestrelState<T> implements State {
       }
       // now harvest the futures
       for (Future<Response> future:futures) {
-        LOG.info("processed response " + future.get());
+        LOG.debug("processed response " + future.get());
       }
     } catch (Exception e) {
-      LOG.info("Received exception during enqueue " + e);
+      LOG.warn("Received exception during enqueue " + e);
       throw new ReportedFailedException("Failed kestrel enqueue:", e);
     }
   }

@@ -17,6 +17,7 @@ import com.twitter.finagle.stats.StatsReceiver;
 import com.twitter.util.Duration;
 import com.twitter.util.Future;
 
+import backtype.storm.topology.ReportedFailedException;
 import org.apache.log4j.Logger;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
@@ -103,13 +104,18 @@ public class KestrelState<T> implements State {
   public void enqueue(List<T> objectsToEnqueue) {
     List<Future<Response>> futures = Lists.newArrayList();
     LOG.info("Items to enqueue " + objectsToEnqueue.size());
-    for (T oneItem:objectsToEnqueue) {
-      ChannelBuffer buffer = ChannelBuffers.wrappedBuffer(options.serializer.serialize(oneItem));
-      futures.add(kestrelClient.set(options.queueName, buffer));
-    }
-    // now harvest the futures
-    for (Future<Response> future:futures) {
-      LOG.info("processed response " + future.get());
+    try {
+      for (T oneItem:objectsToEnqueue) {
+        ChannelBuffer buffer = ChannelBuffers.wrappedBuffer(options.serializer.serialize(oneItem));
+        futures.add(kestrelClient.set(options.queueName, buffer));
+      }
+      // now harvest the futures
+      for (Future<Response> future:futures) {
+        LOG.info("processed response " + future.get());
+      }
+    } catch (Exception e) {
+      LOG.info("Received exception during enqueue " + e);
+      throw new ReportedFailedException("Failed kestrel enqueue:", e);
     }
   }
 }

@@ -1,4 +1,4 @@
-(defproject storm/trident-kestrel "0.0.4-SNAPSHOT"
+(defproject storm/trident-kestrel "0.0.5-SNAPSHOT"
   :source-path "src/clj"
   :java-source-path "src/jvm"
   :javac-options {:debug "true" :fork "true"}
@@ -9,7 +9,7 @@
                  [com.twitter/finagle-commons-stats "5.3.9"]
                  ]
 
-  :dev-dependencies [[storm "0.8.2-wip15"]
+  :dev-dependencies [[storm "0.9.0-wip6"]
                      [org.clojure/clojure "1.4.0"]
                      ])
 

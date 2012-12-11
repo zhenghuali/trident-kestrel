@@ -17,6 +17,7 @@ import com.twitter.finagle.stats.StatsReceiver;
 import com.twitter.util.Duration;
 import com.twitter.util.Future;
 
+import backtype.storm.task.IMetricsContext;
 import backtype.storm.topology.ReportedFailedException;
 import org.apache.log4j.Logger;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -67,7 +68,7 @@ public class KestrelState<T> implements State {
       this.options = options;
     }
 
-    public State makeState(Map conf, int partionIndex, int numPartitions) {
+    public State makeState(Map conf, IMetricsContext metricsContext, int partionIndex, int numPartitions) {
       return new KestrelState(options);
     }
   }

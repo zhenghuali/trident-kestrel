@@ -1,6 +1,9 @@
 package trident.kestrel;
 
 import java.io.Serializable;
+import java.lang.String;
+import java.lang.SuppressWarnings;
+import java.lang.System;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -17,6 +20,10 @@ import com.twitter.finagle.stats.StatsReceiver;
 import com.twitter.util.Duration;
 import com.twitter.util.Future;
 
+import backtype.storm.metric.api.CombinedMetric;
+import backtype.storm.metric.api.CountMetric;
+import backtype.storm.metric.api.ICombiner;
+import backtype.storm.task.IMetricsContext;
 import backtype.storm.task.IMetricsContext;
 import backtype.storm.topology.ReportedFailedException;
 import org.apache.log4j.Logger;
@@ -40,17 +47,21 @@ public class KestrelState<T> implements State {
 
   public static class Options<T> implements Serializable {
     public Serializer serializer = new JSONNonTransactionalSerializer();
-	public final String hostString;
+	  public final String hostString;
     public final int connectionLimit;
     public final int connectionTimeout;
     public final int maxWaiters;
     public final int retries;
     public final int requestTimeout;
-	public final String queueName;
+	  public final String queueName;
+    public final String statsName;
 
-    public Options(String hostString, String queueName,
-        int connectionLimit, int connectionTimeout, int maxWaiters,
-        int retries, int requestTimeout) {
+    /**
+     * Constructor of options for kestrel state. Note that statsName must be unique across exported
+     * stats of toppologies.
+     */
+    public Options(String hostString, String queueName, int connectionLimit, int connectionTimeout,
+                   int maxWaiters, int retries, int requestTimeout, String statsName) {
       this.hostString = hostString;
       this.queueName = queueName;
       this.connectionLimit = connectionLimit;
@@ -58,6 +69,13 @@ public class KestrelState<T> implements State {
       this.maxWaiters = maxWaiters;
       this.retries = retries;
       this.requestTimeout = requestTimeout;
+      this.statsName = statsName;
+    }
+
+    public Options(String hostString, String queueName, int connectionLimit, int connectionTimeout,
+                   int maxWaiters, int retries, int requestTimeout) {
+      this(hostString, queueName, connectionLimit, connectionTimeout, maxWaiters, retries,
+          requestTimeout, null);
     }
   }
 
@@ -69,15 +87,23 @@ public class KestrelState<T> implements State {
     }
 
     public State makeState(Map conf, IMetricsContext metricsContext, int partionIndex, int numPartitions) {
-      return new KestrelState(options);
+      return new KestrelState(options, metricsContext);
     }
   }
 
   private final Client kestrelClient;
   private final Options options;
+  private final IMetricsContext metricsContext;
+  private final String prefixName;
+  private CountMetric errorCount;
+  private CountMetric successCount;
+  private CountMetric totalItemsEnqueued;
+  private CombinedMetric sumLatencies;
+  private CombinedMetric maxLatency;
 
-  public KestrelState(Options options) {
+  public KestrelState(Options options, IMetricsContext metricsContext) {
     this.options = Preconditions.checkNotNull(options);
+    this.metricsContext = metricsContext;
     this.kestrelClient = Client.newInstance(
         ClientBuilder.safeBuildFactory(ClientBuilder.get()
             .name(FINAGLE_NAME).reportTo(STATS_RECEIVER)
@@ -87,7 +113,44 @@ public class KestrelState<T> implements State {
             .retries(options.retries)
             .requestTimeout(Duration.fromTimeUnit(options.requestTimeout, TimeUnit.MILLISECONDS))
         ));
+    this.prefixName = options.statsName;
     LOG.info("Created kestrel client to " + options.hostString);
+
+    errorCount = new CountMetric();
+    successCount = new CountMetric();
+    totalItemsEnqueued = new CountMetric();
+    sumLatencies = new CombinedMetric(new ICombiner<Long>() {
+      @Override
+      public Long identity() {
+        return 0L;
+      }
+      @Override
+      public Long combine(Long a, Long b) {
+        return a + b;
+      }
+    });
+    maxLatency = new CombinedMetric(new ICombiner<Long>() {
+      @Override
+      public Long identity() {
+        return 0L;
+      }
+      @Override
+      public Long combine(Long a, Long b) {
+        return Math.max(a, b);
+      }
+    });
+    if (metricsContext != null && prefixName != null) {
+      errorCount = (CountMetric) metricsContext.registerMetric(prefixName + "-error-count",
+          errorCount, 60);
+      successCount = (CountMetric) metricsContext.registerMetric(prefixName + "-success-count",
+          successCount, 60);
+      totalItemsEnqueued = (CountMetric) metricsContext.registerMetric(prefixName + "-batch-size",
+          successCount, 60);
+      sumLatencies = (CombinedMetric) metricsContext.registerMetric(prefixName + "-sum-latencies",
+          sumLatencies, 60);
+      maxLatency = (CombinedMetric) metricsContext.registerMetric(prefixName + "-max-latency",
+          maxLatency, 60);
+    }
   }
 
   public void beginCommit(Long txid) {
@@ -105,6 +168,7 @@ public class KestrelState<T> implements State {
   public void enqueue(List<T> objectsToEnqueue) {
     List<Future<Response>> futures = Lists.newArrayList();
     LOG.debug("Items to enqueue " + objectsToEnqueue.size());
+    long timeStart = System.nanoTime();
     try {
       for (T oneItem:objectsToEnqueue) {
         ChannelBuffer buffer = ChannelBuffers.wrappedBuffer(options.serializer.serialize(oneItem));
@@ -114,10 +178,28 @@ public class KestrelState<T> implements State {
       for (Future<Response> future:futures) {
         LOG.debug("processed response " + future.get());
       }
+      long latency = (System.nanoTime() - timeStart) / 1000;
+      updateMetrics(true, latency, objectsToEnqueue.size());
     } catch (Exception e) {
+      long latency = (System.nanoTime() - timeStart) / 1000;
+      updateMetrics(false, latency, objectsToEnqueue.size());
       LOG.warn("Received exception during enqueue " + e);
       throw new ReportedFailedException("Failed kestrel enqueue:", e);
     }
+  }
+
+  /**
+   * Updates metrics after a service request including its success and latency.
+   */
+  private void updateMetrics(boolean success, long latencyMS, long totalRequests) {
+    if (success) {
+      successCount.incr();
+    } else {
+      errorCount.incr();
+    }
+    totalItemsEnqueued.incrBy(totalRequests);
+    sumLatencies.update(latencyMS);
+    maxLatency.update(latencyMS);
   }
 }
 

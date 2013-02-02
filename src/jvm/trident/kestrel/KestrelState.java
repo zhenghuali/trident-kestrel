@@ -145,7 +145,7 @@ public class KestrelState<T> implements State {
       successCount = (CountMetric) metricsContext.registerMetric(prefixName + "-success-count",
           successCount, 60);
       totalItemsEnqueued = (CountMetric) metricsContext.registerMetric(prefixName + "-batch-size",
-          successCount, 60);
+          totalItemsEnqueued, 60);
       sumLatencies = (CombinedMetric) metricsContext.registerMetric(prefixName + "-sum-latencies",
           sumLatencies, 60);
       maxLatency = (CombinedMetric) metricsContext.registerMetric(prefixName + "-max-latency",
